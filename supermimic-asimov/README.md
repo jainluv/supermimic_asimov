@@ -1,50 +1,63 @@
-# SuperMimic Asimov
+# SuperMimic Asimov adaptation
 
-## Role in this workspace
+## Purpose
 
-This is the main working project for adapting SuperMimic to the Asimov robot's 12-DoF legs. Use it to convert motion references, register and validate the Asimov task, train GenCoord, run the PPO alternative, play back policies, and benchmark saved models.
+This is the working port of SuperMimic's GenCoord motion-imitation method to the Asimov 12-DoF legs. The core training target is a learned, differentiable neural dynamics model of the Asimov MJLab environment, followed by policy optimization through imagined rollouts of that model.
 
-The original framework checkout is the sibling `../supermimic/`. The Asimov project uses the sibling `../asimov-mjlab/` checkout as its local MJLab dependency.
+## Algorithm used
 
-## Important files
+The supported training path is:
+
+1. Run the current policy in the real MJLab simulation.
+2. Store state, action, next-state, termination and simulator-context data in SuperMimic's replay buffer.
+3. Train `WorldModelLearner` on replay windows to fit the neural dynamics model.
+4. Roll out the learned model inside the differentiable world-model environment.
+5. Update the actor by backpropagating the imagined return through the frozen learned dynamics (BPTT). The default actor-critic variant also fits a critic using GAE; that is not PPO.
+6. Save the learned dynamics/context parameters and policy checkpoints.
+
+`train.py` is the only supported training entry point for this project.
+
+## Key files
 
 ```text
-scripts/convert_asimov_walking_reference.py
-src/supermimic/scripts/train.py
-src/supermimic/scripts/train_ppo.py
-src/supermimic/scripts/play.py
-src/supermimic/scripts/benchmark.py
-src/supermimic/tasks/
-pyproject.toml
+scripts/
+├── convert_asimov_walking_reference.py
+├── validate_asimov_reference.py
+└── inspect_world_model.py
+
+src/supermimic/
+├── scripts/
+│   ├── train.py
+│   ├── play.py
+│   └── benchmark.py
+├── runners/
+│   └── supermimic_runner.py
+├── learners/
+│   ├── wm_learner.py
+│   └── policy_learner.py
+├── models.py
+├── replay_buffer.py
+├── sim_context.py
+├── representations/
+├── backends/
+└── tasks/
+    ├── asimov_env_cfgs.py
+    └── ...
 ```
 
-| File/location | Purpose |
-|---|---|
-| `scripts/convert_asimov_walking_reference.py` | CSV-to-NPZ motion-reference conversion. |
-| `src/supermimic/scripts/train.py` | Main SuperMimic/GenCoord training entry point. |
-| `src/supermimic/scripts/train_ppo.py` | PPO training alternative. |
-| `src/supermimic/scripts/play.py` | Policy playback. |
-| `src/supermimic/scripts/benchmark.py` | Model benchmarking. |
-| `src/supermimic/tasks/` | Task implementations and registration. |
+The standalone PPO runner and entry point are removed by the cleanup patch, along with the separate Asimov MJLab PPO task registrations. The `ActorCriticPolicyLearner` used by `SuperMimicRunner` remains because it inherits from `BpttPolicyLearner` and differentiates the actor's imagined return through the learned model.
 
-## 1. Set up the environment
+## Setup
 
 ```bash
 cd ~/supermimic_ws/supermimic-asimov
 uv sync
-uv run python -c "import mjlab, supermimic; print('Imports OK')"
+uv run python -c "import mjlab.tasks, supermimic.tasks; print('imports OK')"
 ```
 
-This project is configured for Python 3.13 and uses the local `../asimov-mjlab` checkout as an editable dependency.
+## Convert the Asimov reference
 
-## 2. Convert the Asimov walking reference
-
-Inputs:
-
-- CSV: `../asimov-mjlab/src/mjlab/asset_zoo/robots/asimov/assets/walking_reference.csv`
-- MJCF: `../asimov-mjlab/src/mjlab/asset_zoo/robots/asimov/xmls/asimov.xml`
-
-Run:
+The source CSV is located in the MJLab checkout and includes 12 joint trajectories plus four Cartesian marker groups. The current supported GenCoord reference keeps the pelvis fixed and uses the 12 joint trajectories. The Cartesian columns are preserved in the NPZ for review but are not currently used as training loss terms.
 
 ```bash
 cd ~/supermimic_ws/supermimic-asimov
@@ -56,120 +69,112 @@ uv run python scripts/convert_asimov_walking_reference.py \
   --root-height 0.75
 ```
 
-Inspect converter options with:
+The converter does not fabricate root translation. Because the source file does not provide a root trajectory, this output is a fixed-root joint-motion reference, not a travelling locomotion clip.
+
+Validate:
 
 ```bash
-uv run python scripts/convert_asimov_walking_reference.py --help
+uv run python scripts/validate_asimov_reference.py ../data/asimov_walking_rootonly.npz
 ```
 
-Verify the output:
+## Validate task registration
 
 ```bash
-ls -lh ../data/asimov_walking_rootonly.npz
+uv run python -c "import mjlab.tasks, supermimic.tasks; from mjlab.tasks.registry import list_tasks; print([t for t in list_tasks() if 'Asimov' in t])"
 ```
 
-The current converter produces a stationary-root reference containing the 12 joint trajectories and computed velocities. It is not a complete travelling-locomotion retargeting pipeline.
+Expected Asimov task:
 
-## 3. Validate task registration
+```text
+SuperMimic-GenCoord-Asimov-12DOF
+```
+
+## Train the world model and motion policy
+
+Start with a smoke run:
 
 ```bash
 cd ~/supermimic_ws/supermimic-asimov
-uv run python -c "import mjlab.tasks; import supermimic.tasks; print('Task imports OK')"
-```
-
-Current Asimov task ID:
-
-`SuperMimic-GenCoord-Asimov-12DOF`
-
-## 4. Train GenCoord
-
-Start with a smoke test:
-
-```bash
-cd ~/supermimic_ws/supermimic-asimov
-WANDB_MODE=disabled CUDA_VISIBLE_DEVICES=0 \
+WANDB_MODE=offline CUDA_VISIBLE_DEVICES=0 \
 uv run src/supermimic/scripts/train.py \
   SuperMimic-GenCoord-Asimov-12DOF \
   --motion_file ../data/asimov_walking_rootonly.npz \
   --num_envs 64 \
-  --runner.run_name asimov_gencoord_rootonly_smoke \
+  --runner.run_name asimov_gencoord_world_model_smoke \
   --runner.sampling-mode uniform
 ```
 
-See all supported options:
+The command intentionally uses `src/supermimic/scripts/train.py`, which constructs `SuperMimicRunner`. It does not call the deleted standalone PPO runner.
+
+Inspect available options:
 
 ```bash
 uv run src/supermimic/scripts/train.py --help
 ```
 
-- `--motion_file` points to the converted local motion reference.
-- `--num_envs` sets the number of parallel environments.
-- `--runner.run_name` labels the run.
-- `--runner.sampling-mode uniform` selects uniform motion sampling.
-- `WANDB_MODE=disabled` disables WandB logging for this run.
-- `CUDA_VISIBLE_DEVICES=0` selects GPU 0.
+## World-model checkpoint
 
-The local motion-file path disables WandB registry motion loading. The current Asimov integration uses uniform sampling. Do not use `return` sampling as a substitute for uniform sampling in this workflow. Increase environment count only after checking GPU memory and confirming the smoke test.
+The runner builds the `Dynamics` network from the Asimov environment dimensions. Its default hidden widths are `(2048, 2048, 2048)`. It learns from simulator transitions stored in the replay buffer.
 
-## 5. PPO alternative
+The runner creates timestamped local directories:
 
-A separate PPO entry point is available:
-
-```bash
-uv run src/supermimic/scripts/train_ppo.py --help
+```text
+logs/SuperMimic-GenCoord-Asimov-12DOF/<timestamp>/
 ```
 
-Read its help and configuration before launching a long run. It is a different runner from the main GenCoord path.
+At each save interval (default 1000 iterations), it writes:
 
-## 6. Find checkpoints and logs
+- `world_model.pt`: `dynamics` and `sim_context` state dictionaries.
+- `actor.pt`: learned actor state dictionary.
+- `critic.pt`: critic state dictionary when the actor-critic learner is selected.
+
+Find and inspect the newest world model:
 
 ```bash
-cd ~/supermimic_ws/supermimic-asimov
+find logs/SuperMimic-GenCoord-Asimov-12DOF -type f -name world_model.pt \
+  -printf '%T+ %p\n' 2>/dev/null | sort -r | head -10
 
-# Model files
-find . -type f \( -name actor.pt -o -name world_model.pt \) \
-  -not -path '*/.venv/*' -printf '%T+ %p\n' | sort -r | head -30
-
-# Log directories and TensorBoard event files
-find . -type d -name logs -not -path '*/.venv/*'
-find . -type f -name 'events.out.tfevents.*' -not -path '*/.venv/*'
-
-# GPU use
-nvidia-smi
+uv run python scripts/inspect_world_model.py \
+  logs/SuperMimic-GenCoord-Asimov-12DOF/<timestamp>/world_model.pt
 ```
 
-The SuperMimic runners save model files such as `actor.pt` and `world_model.pt`.
+The inspection script checks required state-dictionary groups, tensor counts and finite values. It does not calculate held-out prediction error. Before claiming that the world model learned accurate dynamics, evaluate its one-step and multi-step predictions against transitions held out from MJLab.
 
-## 7. Play back a trained policy
-
-First inspect the installed playback interface:
+## Playback
 
 ```bash
 uv run src/supermimic/scripts/play.py --help
 ```
 
-The local-checkpoint workflow uses a directory containing `actor.pt` and `world_model.pt`. Command shape:
+Use the local checkpoint options documented by that CLI and point it to the run directory containing the required model files.
 
-```bash
-uv run src/supermimic/scripts/play.py \
-  --checkpoint_dir /absolute/path/to/checkpoint/directory \
-  --motion_file ../data/asimov_walking_rootonly.npz
-```
-
-Replace the example path with the real checkpoint directory found in Section 6. Check `--help` for any additional required options. Viewer choices include `auto`, `native`, and `viser`.
-
-## 8. Benchmark
+## Benchmark
 
 ```bash
 uv run src/supermimic/scripts/benchmark.py --help
 ```
 
-Use the options shown by the benchmark script and provide the model directory containing the required model files.
+## Logs and checkpoints
 
-## 9. Resume-training caution
+```bash
+# Latest world-model checkpoints
+find logs/SuperMimic-GenCoord-Asimov-12DOF -type f -name world_model.pt \
+  -printf '%T+ %p\n' 2>/dev/null | sort -r | head -20
 
-Do not assume that `actor.pt` and `world_model.pt` contain optimizer state or the complete state needed to resume training. Verify the runner's checkpoint implementation before relying on a resume workflow. Playback from saved model files is a separate operation from resuming training.
+# All actor/critic/world-model files
+find logs/SuperMimic-GenCoord-Asimov-12DOF -type f \
+  \( -name actor.pt -o -name critic.pt -o -name world_model.pt \) \
+  -printf '%T+ %p\n' 2>/dev/null | sort -r | head -50
 
-## 10. Current scope
+nvidia-smi
+```
 
-The Asimov integration currently focuses on GenCoord, pelvis/root tracking, and the 12 joint coordinates. Do not assume MaxCoord, full link-level forward-kinematics losses, foot-body tracking losses, travelling-locomotion retargeting, or real-robot deployment validation are already implemented.
+## What is still not complete
+
+- The current GenCoord port tracks the pelvis as its anchor and represents the legs through the 12 generalized joint coordinates. It is not a MaxCoord full-body Cartesian implementation.
+- The current CSV marker groups are preserved but are not used in the training loss.
+- The reference contains no root trajectory, so the current converted motion is fixed-root.
+- A saved checkpoint does not prove world-model prediction accuracy or imitation success.
+- Held-out one-step/multi-step model validation and quantitative policy evaluation must be run before reporting success.
+
+Do not describe the current integration as a validated full locomotion or sim-to-real port until these checks pass.

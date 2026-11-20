@@ -1,32 +1,24 @@
-# Motion-reference Data
+# Motion reference data
 
-## Purpose
+## Role
 
-This directory stores source and generated motion-reference datasets used by the Asimov SuperMimic workflow. It is the hand-off point between the Asimov walking-reference source and the NPZ motion file loaded by training.
+This directory stores motion references used as imitation targets. It is not the replay buffer used to fit the neural world model.
 
-## Current data flow
+The world model is trained from state/action/next-state transitions collected by stepping the Asimov MJLab environment. The reference motion supplies the task goal and reference-tracking signal.
+
+## Current source CSV
 
 ```text
-asimov-mjlab/.../walking_reference.csv
-                |
-                v
-supermimic-asimov/scripts/convert_asimov_walking_reference.py
-                |
-                v
-data/asimov_walking_rootonly.npz
-                |
-                v
-SuperMimic GenCoord training
+asimov-mjlab/src/mjlab/asset_zoo/robots/asimov/assets/walking_reference.csv
 ```
 
-## Source files
+The current CSV header contains:
+- 12 actuated joint position channels;
+- 4 Cartesian marker triplets: right foot (`rf`), left foot (`lf`), right knee (`rk`), and left knee (`lk`).
 
-- CSV: `../asimov-mjlab/src/mjlab/asset_zoo/robots/asimov/assets/walking_reference.csv`
-- Robot MJCF: `../asimov-mjlab/src/mjlab/asset_zoo/robots/asimov/xmls/asimov.xml`
+The marker coordinate frame/body-site mapping must be validated before using those marker positions as world-model or motion-tracking targets.
 
-## Convert the reference
-
-Run the converter from the SuperMimic Asimov project:
+## Convert
 
 ```bash
 cd ~/supermimic_ws/supermimic-asimov
@@ -38,54 +30,36 @@ uv run python scripts/convert_asimov_walking_reference.py \
   --root-height 0.75
 ```
 
-Check the generated file:
+The CSV does not contain a pelvis trajectory. The corrected converter therefore keeps the pelvis fixed at the specified home height. It does not add an invented constant forward speed. The output is a joint-trajectory / walk-in-place reference, not a travelling locomotion sequence.
+
+The NPZ contains joint position/velocity, a fixed pelvis body pose, required metadata, and (when present) the original marker positions under `marker_pos_source`. Marker coordinates are preserved verbatim and are not currently consumed by the GenCoord task.
+
+Validate:
 
 ```bash
-ls -lh ~/supermimic_ws/data/asimov_walking_rootonly.npz
+uv run python scripts/validate_asimov_reference.py ../data/asimov_walking_rootonly.npz
 ```
 
-The current conversion creates a stationary-root reference with the 12 joint trajectories and computed velocities. It should not be described as a complete travelling-locomotion retargeting pipeline.
-
-## Inspect files and dataset arrays
+## Inspect the file
 
 ```bash
-cd ~/supermimic_ws
-find data -maxdepth 4 -type f -printf '%p (%k KB)\n' | sort
-find . -type f -name '*.csv' -not -path '*/.venv/*' | sort
-find . -type f -name '*.npz' -not -path '*/.venv/*' | sort
-```
-
-Inspect the current NPZ keys and shapes:
-
-```bash
-cd ~/supermimic_ws
 python - <<'PY'
 import numpy as np
-
-path = "data/asimov_walking_rootonly.npz"
-with np.load(path) as data:
-    print("File:", path)
-    print("Keys:", data.files)
-    for key in data.files:
-        array = data[key]
-        print(f"{key}: shape={array.shape}, dtype={array.dtype}")
+p = "../data/asimov_walking_rootonly.npz"
+with np.load(p, allow_pickle=False) as d:
+    for key in d.files:
+        x = d[key]
+        print(f"{key}: shape={getattr(x, 'shape', None)}, dtype={getattr(x, 'dtype', type(x).__name__)}")
 PY
 ```
 
-## Other reference-generation utility
+## Reference-generation utility
 
-The workspace also contains `~/supermimic_ws/make_ref_v7.py`. Inspect the script before assuming its input format or output options:
+`~/supermimic_ws/make_ref_v7.py` is a separate utility. Inspect its actual arguments before using it:
 
 ```bash
 cd ~/supermimic_ws
-sed -n '1,240p' make_ref_v7.py
+python make_ref_v7.py --help
 ```
 
-## Data-handling rules
-
-- Preserve original reference CSV files.
-- Keep generated references in this directory.
-- Do not overwrite source data with converted outputs.
-- Record conversion FPS and root-height settings when creating a new reference.
-- Inspect NPZ keys and array shapes before training.
-- Keep model checkpoints and training logs separate from motion-reference data.
+Keep original CSV inputs separate from converted NPZ outputs. Do not describe a fixed-root joint reference as full travelling locomotion data.

@@ -1,108 +1,56 @@
-# Asimov MJLab
+# Asimov MJLab simulation foundation
 
 ## Role in this workspace
 
-This directory supplies the Asimov robot and MJLab simulation side of the project. It contains the robot description, assets, task configurations, and conventional PPO entry points. The sibling `supermimic-asimov/` project uses this checkout as its local MJLab dependency and reads the Asimov robot MJCF and walking-reference data from here.
+This checkout supplies the Asimov robot description and MJLab simulation environment used by the SuperMimic adaptation. It is not the project's training entry point. The Asimov-specific conventional PPO velocity-task package is removed from this workspace by the cleanup installer.
 
-## Important locations
+The main algorithmic workflow lives in the sibling directory `../supermimic-asimov/` and is launched through `src/supermimic/scripts/train.py` there.
+
+## Important robot files
 
 ```text
 src/mjlab/asset_zoo/robots/asimov/
-├── assets/walking_reference.csv
-└── xmls/asimov.xml
-
-src/mjlab/tasks/velocity/config/asimov/
-└── rl_cfg.py
-
-src/mjlab/scripts/
-├── train.py
-├── play.py
-└── list_envs.py
+├── asimov_constants.py
+├── assets/
+│   └── walking_reference.csv
+└── xmls/
+    └── asimov.xml
 ```
 
-The tree shows the key files for this workspace, not every file in the repository.
+- `xmls/asimov.xml`: MJCF kinematic tree, body/joint definitions, actuators, collision geometry and sensors.
+- `asimov_constants.py`: Asimov robot configuration, actuator definitions, action scales and home keyframe.
+- `assets/walking_reference.csv`: current source trajectory. Its header contains 12 joint channels and four 3D marker groups (`rf`, `lf`, `rk`, `lk`).
 
-## Setup
+The current home keyframe in `asimov_constants.py` uses a root height of 0.75 m. The reference converter uses this as its fixed-root default unless explicitly overridden.
+
+## Setup and import check
 
 ```bash
 cd ~/supermimic_ws/asimov-mjlab
 uv sync
-uv run python -c "import mjlab; print('MJLab import OK')"
+uv run python -c "from mjlab.asset_zoo.robots.asimov.asimov_constants import get_asimov_robot_cfg; print(get_asimov_robot_cfg())"
 ```
 
-## List available tasks
-
-Do not guess task IDs. Ask the installed project to list them:
+## Inspect the robot and source reference
 
 ```bash
 cd ~/supermimic_ws/asimov-mjlab
-uv run list_envs
+
+# Inspect the robot model
+sed -n '1,220p' src/mjlab/asset_zoo/robots/asimov/xmls/asimov.xml
+
+# Inspect CSV header and a few frames
+head -5 src/mjlab/asset_zoo/robots/asimov/assets/walking_reference.csv
 ```
 
-## Train a conventional PPO task
+## How SuperMimic uses this project
 
-Inspect supported options:
+`supermimic-asimov/pyproject.toml` points to this checkout as its local MJLab dependency. SuperMimic creates and steps the Asimov simulation, collects state/action/next-state transitions, and trains its differentiable dynamics model from those transitions.
 
-```bash
-uv run train --help
-```
+The CSV is used as a motion-imitation target. It is **not** the world-model training dataset. The world-model training data is collected online from MJLab.
 
-Then select the exact Asimov task ID printed by `uv run list_envs`:
+## What not to do
 
-```bash
-uv run train TASK_ID
-```
+Do not launch a separate conventional locomotion-training command as a substitute for the SuperMimic workflow. The cleanup removes `src/mjlab/tasks/velocity/config/asimov/`, which registered Asimov PPO velocity tasks. Generic MJLab simulator, task-registry, and RSL-RL model APIs remain because the simulator integration and SuperMimic network construction depend on them.
 
-Replace `TASK_ID` with the actual registered ID. This workflow is conventional MJLab PPO, not SuperMimic GenCoord.
-
-## View a policy
-
-Inspect the playback interface first:
-
-```bash
-uv run play --help
-```
-
-Use the task and checkpoint arguments supported by that help output. Find likely model files with:
-
-```bash
-find logs -type f \( -name '*.pt' -o -name '*.pth' \) \
-  -printf '%T+ %p\n' 2>/dev/null | sort -r | head -30
-```
-
-## Important configuration locations
-
-- Asimov velocity task configurations: `src/mjlab/tasks/velocity/config/asimov/`
-- PPO runner configuration: `src/mjlab/tasks/velocity/config/asimov/rl_cfg.py`
-- Runner configuration definitions: `src/mjlab/rl/config.py`
-
-The runner configuration includes `resume`, `load_run`, and `load_checkpoint` fields. Inspect the actual CLI and configuration before using overrides; do not assume a generic `--resume` flag exists:
-
-```bash
-uv run train --help
-grep -R -n -E 'resume|load_run|load_checkpoint' src/mjlab/rl src/mjlab/tasks/velocity/config/asimov
-```
-
-## Logs and checkpoints
-
-```bash
-find logs -maxdepth 4 -type d 2>/dev/null | sort
-find logs -type f \( -name '*.pt' -o -name '*.pth' \) \
-  -printf '%T+ %p\n' 2>/dev/null | sort -r | head -30
-find logs -type f -name 'events.out.tfevents.*' 2>/dev/null
-```
-
-If TensorBoard is available in this environment:
-
-```bash
-uv run tensorboard --logdir logs
-```
-
-## Connection to SuperMimic
-
-The Asimov-specific imitation project is in `../supermimic-asimov/`. Its converter uses:
-
-- `src/mjlab/asset_zoo/robots/asimov/assets/walking_reference.csv`
-- `src/mjlab/asset_zoo/robots/asimov/xmls/asimov.xml`
-
-The converted NPZ is stored in the workspace-level `data/` directory. See the root workspace README for the full CSV-to-NPZ-to-GenCoord pipeline.
+For the main experiment, use `../supermimic-asimov/README.md`.
