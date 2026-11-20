@@ -1,0 +1,50 @@
+# Python environments
+**/.venv/
+**/venv/
+**/virtualenv/
+**/.conda/
+
+# Python caches
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Training logs and experiment tracking
+**/logs/
+**/wandb/
+**/lightning_logs/
+**/tensorboard/
+events.out.tfevents.*
+
+# Model checkpoints and generated weights
+**/checkpoints/
+**/checkpoint/
+**/ckpt/
+**/ckpts/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Generated training outputs
+**/runs/
+**/outputs/
+
+# Build artifacts
+**/build/
+**/dist/
+*.egg-info/
+
+# Temporary and system files
+**/.cache/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+
+# MuJoCo logs
+MUJOCO_LOG.TXT
