@@ -51,3 +51,24 @@ MUJOCO_LOG.TXT
 
 # Local safety backups created by repository repair scripts
 /.audit_fix_backups/
+
+# Local audit and patch backups
+.supermimic_audit_fix/
+.audit_fix_backups/
+*~
+*.bak
+*.backup
+*.orig
+*.rej
+*.toml.bak
+*.toml.backup
+*.toml.orig
+# Python and local environments
+__pycache__/
+.venv/
+venv/
+# Training outputs and experiment tracking
+wandb/
+logs/
+outputs/
+checkpoints/
