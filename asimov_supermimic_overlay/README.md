@@ -19,4 +19,4 @@ uv sync
 uv run python -c "import mjlab.tasks, supermimic.tasks; print('imports OK')"
 ```
 
-The standalone `PpoRunner`, its `train_ppo.py` entry point, the Asimov MJLab PPO velocity-task registration package, and the named PPO rollout artifact are removed by the workspace cleanup patch. Generic MJLab simulator and RSL-RL model APIs are retained because this project depends on them; they are not the project's training algorithm.
+The current workspace does not contain the standalone Asimov `PpoRunner`, its `train_ppo.py` entry point, the Asimov MJLab PPO velocity-task registration package, or the named PPO rollout artifact. Generic MJLab simulator and RSL-RL model APIs are retained because this project depends on them; they are not the project's training algorithm. The supported training route is the SuperMimic world-model/BPTT pipeline described above.

@@ -66,6 +66,9 @@ The CSV does not contain a pelvis trajectory. The corrected converter therefore 
 
 The MJLab and SuperMimic adaptation use separate environments:
 
+The Asimov MJLab project pins `mujoco==3.4.0`, the version exercised with the checked-in MuJoCo-Warp revision. MuJoCo is resolved from the configured PyPI index; the project must not route it through `py.mujoco.org`.
+
+
 ```bash
 cd ~/supermimic_ws/asimov-mjlab
 uv sync
@@ -168,14 +171,20 @@ uv run src/supermimic/scripts/play.py --help
 
 The local playback path expects a directory containing the required model files. Use the options shown by the actual CLI for that checkout; do not assume a checkpoint directory flag without checking `--help`.
 
-## Remove/avoid the unrelated PPO experiment
+## Algorithm and cleanup boundary
 
-The cleanup patch removes the separate Asimov-adaptation PPO entry point and runner:
+The supported Asimov training entry point is `supermimic-asimov/src/supermimic/scripts/train.py`. It constructs `SuperMimicRunner`, which collects real MJLab transitions, trains `WorldModelLearner`, and updates the actor through imagined rollouts and BPTT.
+
+The current workspace does **not** include an Asimov-specific conventional PPO velocity-task package, a standalone Asimov PPO runner, or a separate Asimov PPO training entry point. The legacy paths are:
 
 - `supermimic-asimov/src/supermimic/scripts/train_ppo.py`
 - `supermimic-asimov/src/supermimic/runners/ppo_runner.py`
-- `asimov-mjlab/src/mjlab/tasks/velocity/config/asimov/` (Asimov-specific PPO velocity-task registrations and configs)
-- `asimov-mjlab/asimov_ppo_rollout.npz` (the explicitly named PPO rollout artifact). It does **not** delete generic MJLab or upstream framework internals. Those are simulator/framework dependencies and are not the algorithm used by `SuperMimicRunner`. In particular, do not remove `rsl_rl` merely because it also provides PPO: this checkout's SuperMimic runner imports `rsl_rl.models.MLPModel` for network construction. The generic MJLab training APIs remain in the underlying dependency, but no Asimov PPO task is registered by this workspace after the patch.
+- `asimov-mjlab/src/mjlab/tasks/velocity/config/asimov/`
+- `asimov-mjlab/asimov_ppo_rollout.npz`
+
+These historical Asimov-only paths are not part of the supported checkout and must not be restored as an alternative training route. This cleanup does **not** remove generic MJLab training infrastructure, generic RSL-RL PPO modules, or `rsl_rl.models.MLPModel`. The SuperMimic runner imports `MLPModel` for network construction; the presence of generic PPO APIs does not make this project a PPO training pipeline.
+
+`ActorCriticPolicyLearner` remains part of the supported algorithm because it inherits from `BpttPolicyLearner`: the actor is optimized through the learned differentiable dynamics, while GAE is used to fit the critic separately. GAE critic fitting is not PPO.
 
 ## Current validation boundary
 

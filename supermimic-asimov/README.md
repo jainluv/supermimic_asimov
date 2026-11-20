@@ -45,7 +45,7 @@ src/supermimic/
     └── ...
 ```
 
-The standalone PPO runner and entry point are removed by the cleanup patch, along with the separate Asimov MJLab PPO task registrations. The `ActorCriticPolicyLearner` used by `SuperMimicRunner` remains because it inherits from `BpttPolicyLearner` and differentiates the actor's imagined return through the learned model.
+This checkout does not include a standalone Asimov PPO runner or `train_ppo.py` entry point, and the Asimov MJLab PPO velocity-task registration package is absent. The `ActorCriticPolicyLearner` used by `SuperMimicRunner` remains because it inherits from `BpttPolicyLearner` and differentiates the actor's imagined return through the learned model; GAE is used only for the critic update, not as a PPO policy update.
 
 ## Setup
 

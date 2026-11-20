@@ -48,3 +48,6 @@ Thumbs.db
 
 # MuJoCo logs
 MUJOCO_LOG.TXT
+
+# Local safety backups created by repository repair scripts
+/.audit_fix_backups/

@@ -2,9 +2,11 @@
 
 ## Role in this workspace
 
-This checkout supplies the Asimov robot description and MJLab simulation environment used by the SuperMimic adaptation. It is not the project's training entry point. The Asimov-specific conventional PPO velocity-task package is removed from this workspace by the cleanup installer.
+This checkout supplies the Asimov robot description and MJLab simulation environment used by the SuperMimic adaptation. It is not the project's training entry point. The current tree contains no Asimov-specific conventional PPO velocity-task registration package.
 
 The main algorithmic workflow lives in the sibling directory `../supermimic-asimov/` and is launched through `src/supermimic/scripts/train.py` there.
+
+The dependency configuration pins `mujoco==3.4.0` and resolves it from PyPI. This is the MuJoCo version exercised with the checked-in MuJoCo-Warp revision. Do not re-add the `py.mujoco.org` package-source override; it caused the resolver failure encountered in this workspace.
 
 ## Important robot files
 
@@ -49,8 +51,8 @@ head -5 src/mjlab/asset_zoo/robots/asimov/assets/walking_reference.csv
 
 The CSV is used as a motion-imitation target. It is **not** the world-model training dataset. The world-model training data is collected online from MJLab.
 
-## What not to do
+## Training boundary
 
-Do not launch a separate conventional locomotion-training command as a substitute for the SuperMimic workflow. The cleanup removes `src/mjlab/tasks/velocity/config/asimov/`, which registered Asimov PPO velocity tasks. Generic MJLab simulator, task-registry, and RSL-RL model APIs remain because the simulator integration and SuperMimic network construction depend on them.
+Do not launch a separate conventional locomotion-training command as a substitute for the SuperMimic workflow. The current tree intentionally has no Asimov-specific PPO velocity-task registrations. Generic MJLab simulator, task-registry, training APIs, and RSL-RL model APIs remain because the simulation stack and SuperMimic network construction depend on them. They are not the algorithm used by the Asimov adaptation.
 
 For the main experiment, use `../supermimic-asimov/README.md`.
